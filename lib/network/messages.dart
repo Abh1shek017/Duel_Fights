@@ -7,6 +7,8 @@ enum MessageType {
   gameState,
   scoreUpdate,
   gameSelected,
+  gamePaused,
+  gameResumed,
 }
 
 class NetworkMessage {
@@ -16,7 +18,7 @@ class NetworkMessage {
   NetworkMessage({required this.type, required this.data});
 
   String encode() {
-    return jsonEncode({'type': type.name, 'data': data}) + '\n';
+    return '${jsonEncode({'type': type.name, 'data': data})}\n';
   }
 
   static NetworkMessage decode(String raw) {

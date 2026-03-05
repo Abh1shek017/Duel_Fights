@@ -28,9 +28,10 @@ class _PongScreenState extends State<PongScreen>
   double? _touchStartY;
   double? _paddleStartY;
 
-  // Countdown
+  // Countdown & State
   int _countdown = 3;
   bool _gameStarted = false;
+  bool _isPaused = false;
 
   // Score flash
   String? _flashText;
@@ -55,6 +56,10 @@ class _PongScreenState extends State<PongScreen>
     _networkSub = widget.server?.onMessage.listen((msg) {
       if (msg.type == MessageType.paddleInput) {
         _engine.paddle2Y = (msg.data['y'] as num).toDouble();
+      } else if (msg.type == MessageType.gamePaused) {
+        setState(() => _isPaused = true);
+      } else if (msg.type == MessageType.gameResumed) {
+        setState(() => _isPaused = false);
       }
     });
   }
@@ -67,6 +72,10 @@ class _PongScreenState extends State<PongScreen>
         _startCountdown();
       } else if (msg.type == MessageType.scoreUpdate) {
         _showScoreFlash(msg.data['text'] as String);
+      } else if (msg.type == MessageType.gamePaused) {
+        setState(() => _isPaused = true);
+      } else if (msg.type == MessageType.gameResumed) {
+        setState(() => _isPaused = false);
       }
     });
   }
@@ -99,6 +108,11 @@ class _PongScreenState extends State<PongScreen>
   }
 
   void _onTick(Duration elapsed) {
+    if (_isPaused || !_gameStarted) {
+      _lastElapsed = elapsed;
+      return;
+    }
+
     final dt = (_lastElapsed == Duration.zero)
         ? 1 / 60
         : (elapsed - _lastElapsed).inMicroseconds / 1e6;
@@ -170,6 +184,27 @@ class _PongScreenState extends State<PongScreen>
     });
   }
 
+  void _togglePause() {
+    setState(() => _isPaused = !_isPaused);
+    final msgType = _isPaused
+        ? MessageType.gamePaused
+        : MessageType.gameResumed;
+    if (widget.isHost) {
+      widget.server?.send(NetworkMessage(type: msgType, data: {}));
+    } else {
+      widget.client?.send(NetworkMessage(type: msgType, data: {}));
+    }
+  }
+
+  void _quitGame() {
+    if (widget.isHost) {
+      widget.server?.dispose();
+    } else {
+      widget.client?.dispose();
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   @override
   void dispose() {
     _ticker.dispose();
@@ -182,131 +217,274 @@ class _PongScreenState extends State<PongScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E21),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final scaleX = constraints.maxWidth / _engine.fieldWidth;
-          final scaleY = constraints.maxHeight / _engine.fieldHeight;
-          final scale = scaleX < scaleY ? scaleX : scaleY;
-          final offsetX =
-              (constraints.maxWidth - _engine.fieldWidth * scale) / 2;
-          final offsetY =
-              (constraints.maxHeight - _engine.fieldHeight * scale) / 2;
+      backgroundColor: const Color(0xFF050510),
+      body: Stack(
+        children: [
+          // ── Background Grid & Scanlines ──
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.15,
+              child: CustomPaint(painter: _SynthwaveBackgroundPainter()),
+            ),
+          ),
 
-          return GestureDetector(
-            onPanStart: (d) {
-              _touchStartY = d.localPosition.dy;
-              if (widget.isHost) {
-                _paddleStartY = _engine.paddle1Y;
-              } else {
-                _paddleStartY = _engine.paddle2Y;
-              }
-            },
-            onPanUpdate: (d) {
-              if (_touchStartY == null || _paddleStartY == null) return;
-              final deltaY = (d.localPosition.dy - _touchStartY!) / scale;
-              final newY = (_paddleStartY! + deltaY).clamp(
-                PongEngine.paddleHeight / 2,
-                _engine.fieldHeight - PongEngine.paddleHeight / 2,
-              );
-              if (widget.isHost) {
-                _engine.paddle1Y = newY;
-              } else {
-                _engine.paddle2Y = newY;
-              }
-            },
-            child: Stack(
-              children: [
-                // ── Game Canvas ──
-                CustomPaint(
-                  size: Size(constraints.maxWidth, constraints.maxHeight),
-                  painter: _PongPainter(
-                    engine: _engine,
-                    scale: scale,
-                    offsetX: offsetX,
-                    offsetY: offsetY,
-                  ),
-                ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scaleX = constraints.maxWidth / _engine.fieldWidth;
+              final scaleY = constraints.maxHeight / _engine.fieldHeight;
+              final scale = scaleX < scaleY ? scaleX : scaleY;
+              final offsetX =
+                  (constraints.maxWidth - _engine.fieldWidth * scale) / 2;
+              final offsetY =
+                  (constraints.maxHeight - _engine.fieldHeight * scale) / 2;
 
-                // ── Score HUD ──
-                Positioned(
-                  top: offsetY + 10,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _scoreBox('P1', _engine.scoreP1, Colors.cyanAccent),
-                      const SizedBox(width: 40),
-                      Text(
-                        '—',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          fontSize: 28,
-                        ),
+              return GestureDetector(
+                onPanStart: (d) {
+                  _touchStartY = d.localPosition.dy;
+                  if (widget.isHost) {
+                    _paddleStartY = _engine.paddle1Y;
+                  } else {
+                    _paddleStartY = _engine.paddle2Y;
+                  }
+                },
+                onPanUpdate: (d) {
+                  if (_touchStartY == null || _paddleStartY == null) return;
+                  final deltaY = (d.localPosition.dy - _touchStartY!) / scale;
+                  final newY = (_paddleStartY! + deltaY).clamp(
+                    PongEngine.paddleHeight / 2,
+                    _engine.fieldHeight - PongEngine.paddleHeight / 2,
+                  );
+                  if (widget.isHost) {
+                    _engine.paddle1Y = newY;
+                  } else {
+                    _engine.paddle2Y = newY;
+                  }
+                },
+                child: Stack(
+                  children: [
+                    // ── Game Canvas ──
+                    CustomPaint(
+                      size: Size(constraints.maxWidth, constraints.maxHeight),
+                      painter: _PongPainter(
+                        engine: _engine,
+                        scale: scale,
+                        offsetX: offsetX,
+                        offsetY: offsetY,
                       ),
-                      const SizedBox(width: 40),
-                      _scoreBox('P2', _engine.scoreP2, Colors.purpleAccent),
-                    ],
-                  ),
-                ),
+                    ),
 
-                // ── Countdown ──
-                if (!_gameStarted)
-                  Center(
-                    child: Text(
-                      _countdown > 0 ? '$_countdown' : 'GO!',
-                      style: TextStyle(
-                        fontSize: 80,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(color: Colors.cyanAccent, blurRadius: 30),
+                    // ── Score HUD ──
+                    Positioned(
+                      top: offsetY + 24,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _scoreBox(
+                            'HOST',
+                            _engine.scoreP1,
+                            const Color(0xFF00FFCC),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 40),
+                            child: Text(
+                              'VS',
+                              style: TextStyle(
+                                fontFamily: 'Outfit',
+                                color: Colors.white.withValues(alpha: 0.2),
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 4,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                          _scoreBox(
+                            'CLIENT',
+                            _engine.scoreP2,
+                            const Color(0xFFFF00FF),
+                          ),
                         ],
                       ),
                     ),
-                  ),
 
-                // ── Score Flash ──
-                if (_flashText != null)
-                  Center(
-                    child: AnimatedOpacity(
-                      opacity: _flashOpacity,
-                      duration: const Duration(milliseconds: 500),
+                    // ── Countdown ──
+                    if (!_gameStarted)
+                      Center(
+                        child: Text(
+                          _countdown > 0 ? '0$_countdown' : 'FIGHT!',
+                          style: TextStyle(
+                            fontFamily: 'Outfit',
+                            fontSize: _countdown > 0 ? 120 : 80,
+                            fontWeight: FontWeight.w900,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: const Color(
+                                  0xFFFF00FF,
+                                ).withValues(alpha: 0.8),
+                                blurRadius: 40,
+                              ),
+                              Shadow(
+                                color: const Color(
+                                  0xFF00FFCC,
+                                ).withValues(alpha: 0.8),
+                                blurRadius: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // ── Score Flash ──
+                    if (_flashText != null)
+                      Center(
+                        child: AnimatedOpacity(
+                          opacity: _flashOpacity,
+                          duration: const Duration(milliseconds: 500),
+                          child: Text(
+                            _flashText!,
+                            style: const TextStyle(
+                              fontFamily: 'Outfit',
+                              fontSize: 48,
+                              fontWeight: FontWeight.w900,
+                              fontStyle: FontStyle.italic,
+                              color: Color(0xFFFCEE09),
+                              letterSpacing: 2,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xFFFF0055),
+                                  blurRadius: 30,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // ── Role indicator ──
+                    Positioned(
+                      bottom: 12,
+                      left: 0,
+                      right: 0,
                       child: Text(
-                        _flashText!,
+                        widget.isHost
+                            ? '[ SYSTEM: HOST CTRL ]'
+                            : '[ SYSTEM: CLIENT CTRL ]',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 42,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.yellowAccent,
-                          shadows: [
-                            Shadow(color: Colors.orange, blurRadius: 20),
-                          ],
+                          fontFamily: 'Outfit',
+                          color: Colors.white.withValues(alpha: 0.3),
+                          fontSize: 10,
+                          letterSpacing: 8,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                  ),
 
-                // ── Role indicator ──
-                Positioned(
-                  bottom: 12,
-                  left: 0,
-                  right: 0,
-                  child: Text(
-                    widget.isHost
-                        ? 'You are HOST (left paddle) — drag to move'
-                        : 'You are CLIENT (right paddle) — drag to move',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 12,
+                    // ── Top Action Bar (Pause / Exit) ──
+                    Positioned(
+                      top: offsetY + 24,
+                      left: offsetX + 24,
+                      child: _buildSynthButton(
+                        icon: Icons.close_rounded,
+                        onTap: _quitGame,
+                        color: const Color(0xFFFF0055),
+                      ),
                     ),
-                  ),
+                    Positioned(
+                      top: offsetY + 24,
+                      right: offsetX + 24,
+                      child: _buildSynthButton(
+                        icon: _isPaused
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
+                        onTap: _gameStarted ? _togglePause : null,
+                        color: const Color(0xFF00FFCC),
+                      ),
+                    ),
+
+                    // ── Pause Menu Overlay ──
+                    if (_isPaused)
+                      Container(
+                        color: const Color(0xFF03030A).withValues(alpha: 0.8),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'SYSTEM PAUSED',
+                                style: TextStyle(
+                                  fontFamily: 'Outfit',
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.w900,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.white,
+                                  letterSpacing: 4,
+                                  shadows: [
+                                    Shadow(
+                                      color: Color(0xFF00FFCC),
+                                      blurRadius: 20,
+                                    ),
+                                    Shadow(
+                                      color: Color(0xFFFF00FF),
+                                      blurRadius: 40,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 48),
+                              GestureDetector(
+                                onTap: _togglePause,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 48,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF00FFCC,
+                                    ).withValues(alpha: 0.1),
+                                    border: Border.all(
+                                      color: const Color(0xFF00FFCC),
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFF00FFCC,
+                                        ).withValues(alpha: 0.3),
+                                        blurRadius: 20,
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Text(
+                                    'RESUME',
+                                    style: TextStyle(
+                                      fontFamily: 'Outfit',
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 8,
+                                      color: Color(0xFF00FFCC),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -318,21 +496,54 @@ class _PongScreenState extends State<PongScreen>
         Text(
           label,
           style: TextStyle(
-            color: color.withValues(alpha: 0.7),
-            fontSize: 14,
-            letterSpacing: 4,
+            fontFamily: 'Outfit',
+            color: color.withValues(alpha: 0.8),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 6,
           ),
         ),
         Text(
-          '$score',
+          score.toString().padLeft(2, '0'),
           style: TextStyle(
-            fontSize: 48,
+            fontFamily: 'Outfit',
+            fontSize: 64,
             fontWeight: FontWeight.w900,
-            color: color,
-            shadows: [Shadow(color: color, blurRadius: 12)],
+            color: Colors.white,
+            height: 1.1,
+            shadows: [
+              Shadow(color: color, blurRadius: 24, offset: const Offset(0, 2)),
+              Shadow(color: color.withValues(alpha: 0.5), blurRadius: 48),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSynthButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 12),
+          ],
+        ),
+        child: Icon(
+          icon,
+          color: onTap == null ? color.withValues(alpha: 0.3) : color,
+          size: 28,
+        ),
+      ),
     );
   }
 }
@@ -355,71 +566,91 @@ class _PongPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Field background
     final fieldRect = Rect.fromLTWH(
       offsetX,
       offsetY,
       engine.fieldWidth * scale,
       engine.fieldHeight * scale,
     );
+
+    // Deep void background
     canvas.drawRRect(
-      RRect.fromRectAndRadius(fieldRect, const Radius.circular(12)),
-      Paint()..color = const Color(0xFF111633),
+      RRect.fromRectAndRadius(fieldRect, const Radius.circular(16)),
+      Paint()..color = const Color(0xFF03030A),
     );
 
-    // Border
+    // Glowing synthwave border
+    final borderPaint = Paint()
+      ..color = const Color(0xFF00FFCC).withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+
+    // Outer glow for the border
     canvas.drawRRect(
-      RRect.fromRectAndRadius(fieldRect, const Radius.circular(12)),
+      RRect.fromRectAndRadius(fieldRect, const Radius.circular(16)).inflate(2),
       Paint()
-        ..color = Colors.cyanAccent.withValues(alpha: 0.2)
+        ..color = const Color(0xFF00FFCC).withValues(alpha: 0.2)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+        ..strokeWidth = 6
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(fieldRect, const Radius.circular(16)),
+      borderPaint,
     );
 
-    // Center dashed line
+    // Center divider (Laser Fence)
     final centerX = offsetX + engine.fieldWidth * scale / 2;
     final dashPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
-      ..strokeWidth = 2;
+      ..color = const Color(0xFFFF00FF).withValues(alpha: 0.6)
+      ..strokeWidth = 2
+      ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);
+
     for (
       double y = offsetY;
       y < offsetY + engine.fieldHeight * scale;
-      y += 16
+      y += 24
     ) {
-      canvas.drawLine(Offset(centerX, y), Offset(centerX, y + 8), dashPaint);
+      canvas.drawLine(Offset(centerX, y), Offset(centerX, y + 12), dashPaint);
     }
 
-    // Paddle 1 (left, cyan)
+    // Paddles (Host = Cyan, Client = Magenta)
     _drawPaddle(
       canvas,
       engine.paddle1Y,
       PongEngine.paddleMargin,
-      Colors.cyanAccent,
+      const Color(0xFF00FFCC),
     );
-
-    // Paddle 2 (right, purple)
     _drawPaddle(
       canvas,
       engine.paddle2Y,
       engine.fieldWidth - PongEngine.paddleMargin - PongEngine.paddleWidth,
-      Colors.purpleAccent,
+      const Color(0xFFFF00FF),
     );
 
-    // Ball
+    // The Plasma Ball
     final bx = offsetX + engine.ballX * scale;
     final by = offsetY + engine.ballY * scale;
     final br = PongEngine.ballSize / 2 * scale;
 
-    // Glow
+    // Ball Outer Core Glow
     canvas.drawCircle(
       Offset(bx, by),
-      br * 3,
+      br * 4,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.08)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
+        ..color = const Color(0xFFFCEE09).withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
     );
-    // Ball body
-    canvas.drawCircle(Offset(bx, by), br, Paint()..color = Colors.white);
+    // Ball Inner Core Glow
+    canvas.drawCircle(
+      Offset(bx, by),
+      br * 2,
+      Paint()
+        ..color = const Color(0xFFFCEE09).withValues(alpha: 0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    // Ball pure white energy center
+    canvas.drawCircle(Offset(bx, by), br * 0.8, Paint()..color = Colors.white);
   }
 
   void _drawPaddle(Canvas canvas, double paddleY, double paddleX, Color color) {
@@ -433,17 +664,68 @@ class _PongPainter extends CustomPainter {
       Radius.circular(w / 2),
     );
 
-    // Glow
+    // Primary Aura
     canvas.drawRRect(
-      rect.inflate(4),
+      rect.inflate(8),
       Paint()
-        ..color = color.withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = color.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
     );
-    // Body
-    canvas.drawRRect(rect, Paint()..color = color);
+
+    // Secondary intense glow
+    canvas.drawRRect(
+      rect.inflate(2),
+      Paint()
+        ..color = color.withValues(alpha: 0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // Solid Core
+    canvas.drawRRect(rect, Paint()..color = Colors.white);
   }
 
   @override
   bool shouldRepaint(covariant _PongPainter old) => true;
+}
+
+// ─────────────────────────────────────────────
+//  Synthwave Background Environment
+// ─────────────────────────────────────────────
+class _SynthwaveBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFFF00FF).withValues(alpha: 0.2)
+      ..strokeWidth = 1;
+
+    // Draw perspective grid
+    final centerY = size.height * 0.6;
+
+    // Horizon line glow
+    canvas.drawLine(
+      Offset(0, centerY),
+      Offset(size.width, centerY),
+      Paint()
+        ..color = const Color(0xFF00FFCC).withValues(alpha: 0.8)
+        ..strokeWidth = 2
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+
+    // Vertical vanishing lines
+    for (double x = -size.width; x <= size.width * 2; x += 40) {
+      canvas.drawLine(
+        Offset(size.width / 2, centerY),
+        Offset(x, size.height),
+        paint,
+      );
+    }
+
+    // Horizontal moving lines (pseudo-perspective)
+    for (double y = centerY + 10; y <= size.height; y += (y - centerY) * 0.15) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SynthwaveBackgroundPainter old) => false;
 }
