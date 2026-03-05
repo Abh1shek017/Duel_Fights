@@ -6,6 +6,7 @@ enum MessageType {
   paddleInput,
   gameState,
   scoreUpdate,
+  gameSelected,
 }
 
 class NetworkMessage {
