@@ -96,150 +96,185 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   @override
   Widget build(BuildContext context) {
+    final h = MediaQuery.of(context).size.height;
+    final w = MediaQuery.of(context).size.width;
+    final isSmall = h < 700;
+
+    // Clamp font sizes so they look good on both small phones and large screens
+    final titleFontSize = (h * 0.042).clamp(28.0, 44.0);
+    final subtitleFontSize = (h * 0.016).clamp(10.0, 16.0);
+    final buttonFontSize = (h * 0.02).clamp(14.0, 20.0);
+    final inputFontSize = (h * 0.02).clamp(14.0, 20.0);
+    final statusFontSize = (h * 0.017).clamp(11.0, 16.0);
+    final buttonHeight = (h * 0.065).clamp(44.0, 60.0);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Title ──
-              AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  final glow = 4 + _pulseController.value * 12;
-                  return Text(
-                    '⚡ BLUETOOTH\n   BRAWLERS ⚡',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 38,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 3,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                            color: Colors.cyanAccent.withValues(alpha: 0.8),
-                            blurRadius: glow),
-                        Shadow(
-                            color: Colors.purpleAccent.withValues(alpha: 0.5),
-                            blurRadius: glow * 1.5),
-                      ],
-                    ),
-                  );
-                },
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: w * 0.06,
+                vertical: h * 0.02,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'LOCAL MULTIPLAYER PONG',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.cyanAccent.withValues(alpha: 0.7),
-                  letterSpacing: 6,
-                ),
-              ),
-              const SizedBox(height: 48),
+              child: Column(
+                children: [
+                  // ── Top spacer ──
+                  Spacer(flex: isSmall ? 1 : 2),
 
-              // ── Host Button ──
-              _buildNeonButton(
-                label: 'HOST GAME',
-                icon: Icons.wifi_tethering,
-                color: Colors.cyanAccent,
-                onTap: _connecting ? null : _hostGame,
-              ),
-              const SizedBox(height: 20),
-
-              // ── IP Input ──
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Colors.purpleAccent.withValues(alpha: 0.4)),
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-                child: TextField(
-                  controller: _ipController,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 18, letterSpacing: 2),
-                  decoration: InputDecoration(
-                    hintText: 'Host IP address',
-                    hintStyle:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        vertical: 16, horizontal: 20),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // ── Join Button ──
-              _buildNeonButton(
-                label: 'JOIN GAME',
-                icon: Icons.sports_esports,
-                color: Colors.purpleAccent,
-                onTap: _connecting ? null : _joinGame,
-              ),
-              const SizedBox(height: 32),
-
-              // ── Status ──
-              if (_status.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.white.withValues(alpha: 0.05),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_connecting)
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.cyanAccent),
+                  // ── Title ──
+                  AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      final glow = 4 + _pulseController.value * 12;
+                      return Text(
+                        '⚡ BLUETOOTH\n   BRAWLERS ⚡',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: titleFontSize,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 3,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                                color:
+                                    Colors.cyanAccent.withValues(alpha: 0.8),
+                                blurRadius: glow),
+                            Shadow(
+                                color:
+                                    Colors.purpleAccent.withValues(alpha: 0.5),
+                                blurRadius: glow * 1.5),
+                          ],
                         ),
-                      if (_connecting) const SizedBox(width: 12),
-                      Flexible(
-                        child: Text(
-                          _status,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 14,
+                      );
+                    },
+                  ),
+                  SizedBox(height: h * 0.008),
+                  Text(
+                    'LOCAL MULTIPLAYER PONG',
+                    style: TextStyle(
+                      fontSize: subtitleFontSize,
+                      color: Colors.cyanAccent.withValues(alpha: 0.7),
+                      letterSpacing: 6,
+                    ),
+                  ),
+
+                  Spacer(flex: isSmall ? 1 : 2),
+
+                  // ── Host Button ──
+                  _buildNeonButton(
+                    label: 'HOST GAME',
+                    icon: Icons.wifi_tethering,
+                    color: Colors.cyanAccent,
+                    onTap: _connecting ? null : _hostGame,
+                    height: buttonHeight,
+                    fontSize: buttonFontSize,
+                  ),
+                  SizedBox(height: h * 0.015),
+
+                  // ── IP Input ──
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: Colors.purpleAccent.withValues(alpha: 0.4)),
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                    child: TextField(
+                      controller: _ipController,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: inputFontSize,
+                          letterSpacing: 2),
+                      decoration: InputDecoration(
+                        hintText: 'Host IP address',
+                        hintStyle: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3)),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                            vertical: h * 0.015, horizontal: 20),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: h * 0.015),
+
+                  // ── Join Button ──
+                  _buildNeonButton(
+                    label: 'JOIN GAME',
+                    icon: Icons.sports_esports,
+                    color: Colors.purpleAccent,
+                    onTap: _connecting ? null : _joinGame,
+                    height: buttonHeight,
+                    fontSize: buttonFontSize,
+                  ),
+
+                  SizedBox(height: h * 0.025),
+
+                  // ── Status ──
+                  if (_status.isNotEmpty)
+                    Container(
+                      padding: EdgeInsets.all(h * 0.012),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_connecting)
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: const CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.cyanAccent),
+                            ),
+                          if (_connecting) const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              _status,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: statusFontSize,
+                              ),
+                            ),
                           ),
+                        ],
+                      ),
+                    ),
+
+                  if (_localIP.isNotEmpty) ...[
+                    SizedBox(height: h * 0.012),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 20, vertical: h * 0.01),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(colors: [
+                          Colors.cyanAccent.withValues(alpha: 0.1),
+                          Colors.purpleAccent.withValues(alpha: 0.1),
+                        ]),
+                      ),
+                      child: SelectableText(
+                        'Your IP: $_localIP',
+                        style: TextStyle(
+                          color: Colors.cyanAccent,
+                          fontSize: inputFontSize,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-
-              if (_localIP.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    gradient: LinearGradient(colors: [
-                      Colors.cyanAccent.withValues(alpha: 0.1),
-                      Colors.purpleAccent.withValues(alpha: 0.1),
-                    ]),
-                  ),
-                  child: SelectableText(
-                    'Your IP: $_localIP',
-                    style: const TextStyle(
-                      color: Colors.cyanAccent,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
                     ),
-                  ),
-                ),
-              ],
-            ],
+                  ],
+
+                  // ── Bottom spacer ──
+                  const Spacer(flex: 3),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -250,18 +285,20 @@ class _LobbyScreenState extends State<LobbyScreen>
     required String label,
     required IconData icon,
     required Color color,
+    required double height,
+    required double fontSize,
     VoidCallback? onTap,
   }) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: height,
       child: ElevatedButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, color: color),
+        icon: Icon(icon, color: color, size: fontSize * 1.1),
         label: Text(
           label,
           style: TextStyle(
-            fontSize: 18,
+            fontSize: fontSize,
             fontWeight: FontWeight.bold,
             letterSpacing: 3,
             color: color,

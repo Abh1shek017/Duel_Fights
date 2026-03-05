@@ -1,4 +1,4 @@
-# bluetooth_brawlers
+# Duel_Fights
 
 A new Flutter project.
 
